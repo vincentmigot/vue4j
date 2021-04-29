@@ -15,5 +15,15 @@
     <modules>
         <module>vue4j-parent</module>
         <module>vue4j-main</module>
+        <module>vue4j-dev</module>
     </modules>
+    
+    <dependencies>
+        <!-- Vue4J build-in modules dependencies-->
+        <dependency>
+            <groupId>org.vue4j</groupId>
+            <artifactId>vue4j-main</artifactId>
+            <version>${revision}</version>
+        </dependency>
+    </dependencies>
 </project>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <artifactId>vue4j-dev</artifactId>
+    <packaging>jar</packaging>
+    
+    <parent>
+        <groupId>org.vue4j</groupId>
+        <artifactId>vue4j</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    
+    <build>
+        <plugins>
+            <!-- Check plugin and dependencies available updates -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>versions-maven-plugin</artifactId>
+                <configuration>
+                    <rulesUri>classpath:///version-rules.xml</rulesUri>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.opensilex</groupId>
+                        <artifactId>opensilex-main</artifactId>
+                        <version>${revision}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>

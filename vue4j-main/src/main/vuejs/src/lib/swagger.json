@@ -1,0 +1,1 @@
+{"openapi":"3.0.1","info":{"title":"Open API","version":"1.0.0"},"paths":{"/config":{"get":{"summary":"Return the current configuration","operationId":"getConfig","responses":{"200":{"description":"Front application configuration"}}}}}}

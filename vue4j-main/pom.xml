@@ -14,6 +14,25 @@
     
     <build>
         <plugins>
+            <!-- Display outdated dependencies -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>versions-maven-plugin</artifactId>
+                <configuration>
+                    <rulesUri>file:////${project.basedir}/src/main/resources/version-rules.xml</rulesUri>
+                </configuration>
+                
+                <executions>
+                    <execution>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>display-dependency-updates</goal>
+                            <goal>display-plugin-updates</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            
             <!-- Include git revision informations -->
             <plugin>
                 <groupId>pl.project13.maven</groupId>
@@ -43,6 +62,59 @@
                     <commitIdGenerationMode>full</commitIdGenerationMode>
                 </configuration>
             </plugin>
+            
+            <!-- Generate swagger.json file -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                            <mainClass>org.vue4j.openapi.OpenAPIGenerator</mainClass>
+                            <arguments>
+                                <argument>${project.basedir}/src/main/java/</argument>
+                                <argument>${project.basedir}/src/main/vuejs/src/lib/swagger.json</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <!-- Generate typescript service lib -->
+            <plugin>
+                <groupId>org.openapitools</groupId>
+                <artifactId>openapi-generator-maven-plugin</artifactId>
+                <version>5.0.1</version>
+                
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/vuejs/src/lib/swagger.json</inputSpec>
+                            <generatorName>typescript-inversify</generatorName>
+                            <output>${project.basedir}/src/main/vuejs/src/lib/</output>
+                            <configOptions>
+                                <packageName>${project.name}</packageName>
+                                <packageVersion>${revision}</packageVersion>
+                                <npmName>${project.name}</npmName>
+                                <usePromise>true</usePromise>
+                                <useHttpClient>true</useHttpClient>
+                                <modelPropertyNaming>original</modelPropertyNaming>
+                            </configOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            
         </plugins>
     </build>
 </project>

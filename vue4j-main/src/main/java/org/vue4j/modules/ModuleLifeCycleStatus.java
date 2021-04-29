@@ -9,10 +9,13 @@ package org.vue4j.modules;
  *
  * @author vince
  */
-public @interface ModuleConfig {
-    
-    public String id();
-    
-    public Class<?> cfg();
-    
+public enum ModuleLifeCycleStatus {
+    VISIBLE,
+    CONFIGURED,
+    CONFIGURATION_ERROR,
+    ACTIVATED,
+    ACTIVATION_ERROR,
+    STARTED,
+    STARTING_ERROR,
+    STOPPING_ERROR
 }

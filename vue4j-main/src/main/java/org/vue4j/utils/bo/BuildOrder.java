@@ -64,7 +64,7 @@ public interface BuildOrder<T> {
             }
         }
 
-        if (items.size() > 0 && remainingItemCount == items.size()) {
+        if (remainingItems.size() > 0 && remainingItemCount == items.size()) {
             throw new BuildOrderUnsolvableException();
         }
 

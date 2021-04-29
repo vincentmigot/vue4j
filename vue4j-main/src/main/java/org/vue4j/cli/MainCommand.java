@@ -83,12 +83,13 @@ public class MainCommand extends AbstractCommand implements IVersionProvider {
                 isHelp = isHelp || commandToExcute.getSubcommands().size() > 0;
             }
 
-            LOGGER.debug("Setup instance");
-            instance.setup();
-
+            LOGGER.debug("Configure instance");
+            instance.configure();
+            LOGGER.debug("Instance configured");
             if (!isHelp) {
                 LOGGER.debug("Start instance");
                 instance.start();
+                LOGGER.debug("Instance started");
                 commands.forEach((Vue4JCommand cmd) -> {
                     cmd.setVue4J(instance);
                 });

@@ -7,19 +7,40 @@ import ch.qos.logback.core.joran.spi.JoranException;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.annotation.Annotation;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.apache.commons.io.FileUtils;
+import org.reflections.Reflections;
+import org.reflections.scanners.MethodAnnotationsScanner;
+import org.reflections.scanners.SubTypesScanner;
+import org.reflections.scanners.TypeAnnotationsScanner;
+import org.reflections.util.ConfigurationBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vue4j.config.ConfigManager;
 import org.vue4j.log.LogFilter;
-import org.vue4j.modules.ModuleConfig;
+import org.vue4j.modules.Vue4JModuleConfig;
 import org.vue4j.modules.ModuleManager;
 import org.vue4j.modules.Vue4JModule;
+import org.vue4j.server.ServerModule;
 import org.vue4j.services.ServiceManager;
+import org.vue4j.utils.ClassUtils;
 import org.vue4j.utils.bo.BuildOrderUnsolvableException;
 
 public class Vue4J {
+
+    public final static String VERSION = "1.0.0";
 
     private final static Logger LOGGER = LoggerFactory.getLogger(Vue4J.class);
 
@@ -60,39 +81,49 @@ public class Vue4J {
         moduleManager.forEachModulesReverse(action);
     }
 
-    public void setup() throws BuildOrderUnsolvableException, IOException, Exception {
+    public <T> void forEachModulesImplementingExtension(Class<T> moduleExtensionClass, Consumer<T> action) throws BuildOrderUnsolvableException {
+        moduleManager.forEachModulesImplementingExtension(moduleExtensionClass, action);
+    }
+
+    public void configure() throws BuildOrderUnsolvableException, IOException, Exception {
+        LOGGER.debug("Build system configuration");
         systemConfig = configManager.buildSystemConfig(options.getConfigFile());
 
         LOGGER.debug("Load modules configuration");
-
         // Iterate over modules
         forEachModules((module) -> {
+            module.setVue4J(this);
+
             // Get module configuration identifier and class
-            ModuleConfig[] declaredConfigs = module.getClass().getAnnotationsByType(ModuleConfig.class);
-            for (ModuleConfig declaredConfig : declaredConfigs) {
+            Vue4JModuleConfig[] declaredConfigs = module.getClass().getAnnotationsByType(Vue4JModuleConfig.class);
+            for (Vue4JModuleConfig declaredConfig : declaredConfigs) {
                 String configId = declaredConfig.id();
-                Class<?> configClass = declaredConfig.cfg();
+                Class<?> configClass = declaredConfig.configInterface();
 
                 // If module is configurable
                 if (configId != null && configClass != null) {
                     // Load configuration with manager
                     Object config = configManager.loadConfig(configId, configClass);
                     // Affect loaded configuration to module
-                    module.setVue4J(this);
+
                     module.registerConfig(configId, configClass, config);
-                    module.configure();
+
                 }
             }
+
+            module.initialize();
         });
 
-        LOGGER.debug("Current expanded configuration:" + configManager.getExpandedYAMLConfig(systemConfig, moduleManager));
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Current expanded configuration:" + configManager.getExpandedYAMLConfig(systemConfig, moduleManager));
+        }
     }
 
     public void start() throws BuildOrderUnsolvableException, Exception {
-        LOGGER.debug("Starting instance");
+        LOGGER.debug("Register shutdown callback");
         // Add hook to clean modules on shutdown
         if (shutdownHook != null) {
-            LOGGER.error("Vue4J instance already started ! Multiple call to 'start' method");
+            LOGGER.warn("Vue4J instance already started ! Multiple call to 'start' method");
             return;
         }
         shutdownHook = new Thread() {
@@ -107,12 +138,17 @@ public class Vue4J {
         };
         Runtime.getRuntime().addShutdownHook(shutdownHook);
 
+        LOGGER.debug("Enable required modules");
         forEachModules((module) -> {
-            if (!module.isEnabled()) {
-                module.enable();
+            module.enable();
+        });
+
+        LOGGER.debug("Auto-starting modules");
+        forEachModules((module) -> {
+            if (module.autoStart()) {
+                module.run();
             }
         });
-        LOGGER.debug("Instance started");
     }
 
     /**
@@ -125,9 +161,7 @@ public class Vue4J {
 
         // Stop all modules
         forEachModulesReverse(module -> {
-            if (module.isEnabled()) {
-                module.disable();
-            }
+            module.disable();
         });
 
         // Clean all modules
@@ -135,6 +169,144 @@ public class Vue4J {
             module.clean();
         });
 
+    }
+
+    /**
+     * Determine if application is in debug mode.
+     *
+     * @return true if application is in debug mode and false otherwise
+     */
+    public boolean isDebug() {
+        return options.isDebug();
+    }
+
+    /**
+     * Return raw application configuration files.
+     *
+     * @return raw configuration file
+     */
+    public File getConfigFile() {
+        return options.getConfigFile();
+    }
+
+    /**
+     * Internal reflections instance to analyse all application classes and methods.
+     */
+    private Reflections reflections;
+
+    /**
+     * Return reflection instance, building it if needed.
+     *
+     * @return Reflections instance
+     */
+    public Reflections getReflections() {
+        if (reflections == null) {
+            try {
+                this.buildReflections();
+            } catch (BuildOrderUnsolvableException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+        return reflections;
+    }
+
+    /**
+     * Build reflection instance by adding all modules JAR to class loader and initialize Reflections library with them.
+     */
+    private void buildReflections() throws BuildOrderUnsolvableException {
+        LOGGER.debug("Initialize JAR URLs to scan by reflection");
+        Set<URL> urlsToScan = this.moduleManager.getModulesURLs();
+
+        LOGGER.debug("Exclude ignored modules from reflection");
+        Collection<String> ignoredModuleFilePatterns = new ArrayList<>(); //systemConfig.ignoredModules().values();
+        urlsToScan = urlsToScan.stream().filter((URL url) -> {
+            for (String ignoredModuleFilePattern : ignoredModuleFilePatterns) {
+                if (!url.getPath().endsWith(ignoredModuleFilePattern)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }).collect(Collectors.toSet());
+
+        LOGGER.debug("Extra module JAR files registring for static instance");
+        Set<URL> jarModulesURLs = new HashSet<>();
+        forEachModules(m -> {
+            File jarFile = ClassUtils.getJarFile(m.getClass());
+
+            if (!m.getClass().equals(ServerModule.class) || !jarFile.isFile()) {
+
+                try {
+                    URL jarURL = new URL("file://" + jarFile.getAbsolutePath());
+                    LOGGER.debug("Register module JAR URL for" + m.getClass().getSimpleName() + ": " + jarURL.getPath());
+                    jarModulesURLs.add(jarURL);
+                } catch (MalformedURLException ex) {
+                    LOGGER.warn("Invalid module URL for: " + m.getClass().getSimpleName(), ex);
+                }
+            }
+        });
+
+        urlsToScan.addAll(jarModulesURLs);
+
+        ConfigurationBuilder builder;
+        if (!urlsToScan.isEmpty()) {
+
+            // Load dependencies through URL Class Loader based on actual class loader
+            if (urlsToScan.size() > 0) {
+                URLClassLoader classLoader = new URLClassLoader(
+                        urlsToScan.toArray(new URL[urlsToScan.size()]),
+                        Thread.currentThread().getContextClassLoader()
+                );
+                LOGGER.debug("Module registred, jar URLs added to classpath");
+
+                // Set the newly created class loader as the main one
+                Thread.currentThread().setContextClassLoader(classLoader);
+            } else {
+                LOGGER.debug("No external module found !");
+            }
+
+            builder = ConfigurationBuilder.build("", Vue4J.getClassLoader())
+                    .setUrls(urlsToScan)
+                    .setScanners(new TypeAnnotationsScanner(), new SubTypesScanner(), new MethodAnnotationsScanner())
+                    .setExpandSuperTypes(false);
+        } else {
+            builder = ConfigurationBuilder.build("", Vue4J.getClassLoader())
+                    .setScanners(new TypeAnnotationsScanner(), new SubTypesScanner(), new MethodAnnotationsScanner())
+                    .setExpandSuperTypes(false);
+        }
+
+        reflections = new Reflections(builder);
+    }
+
+    /**
+     * Helper method to get annoted class list in application.
+     *
+     * @param annotation Annotation to look at
+     * @return Map of found annotated classes indexed by name
+     */
+    public Map<String, Class<?>> getAnnotatedClassesMap(Class<? extends Annotation> annotation) {
+        return getAnnotatedClassesMap(annotation, getReflections());
+    }
+
+    /**
+     * Helper method to get annoted class list in application using a specific reflections instance.
+     *
+     * @param annotation Annotation to look at
+     * @param ref Reflections instance
+     * @return Map of found annotated classes indexed by name
+     */
+    public static Map<String, Class<?>> getAnnotatedClassesMap(Class<? extends Annotation> annotation, Reflections ref) {
+        Map<String, Class<?>> classMap = new HashMap<>();
+
+        ref.getTypesAnnotatedWith(annotation).forEach((Class<?> c) -> {
+            classMap.put(c.getCanonicalName(), c);
+        });
+
+        return classMap;
+    }
+
+    public static Vue4J createInstance(Map<String, String> options) throws Exception {
+        return createInstance(Vue4JOptions.fromMap(options, false));
     }
 
     public static Vue4J createInstance(Vue4JOptions options) throws Exception {
@@ -165,7 +337,7 @@ public class Vue4J {
             ModuleManager modManager = new ModuleManager(options.getBaseDirectory());
 
             LOGGER.debug("Create service manager");
-            ServiceManager srvManager = new ServiceManager();
+            ServiceManager srvManager = new ServiceManager(cfgManager);
 
             Vue4J instance = new Vue4J(
                     cfgManager,
@@ -212,4 +384,28 @@ public class Vue4J {
     public static ClassLoader getClassLoader() {
         return Thread.currentThread().getContextClassLoader();
     }
+
+    public <T> T getModule(Class<T> moduleClass) {
+        return moduleManager.getModule(moduleClass);
+    }
+
+    public Path getBaseDirectory() {
+        return this.options.getBaseDirectory();
+    }
+
+    private final Map<String, Object> globalArguments = new HashMap<>();
+
+    public void setGlobalArgument(String key, Object value) {
+        globalArguments.put(key, value);
+    }
+
+    public <T> T getGlobalArgument(String key, Class<T> valueClass) {
+        Object value = globalArguments.get(key);
+        if (value != null) {
+            return (T) value;
+        } else {
+            return null;
+        }
+    }
+
 }

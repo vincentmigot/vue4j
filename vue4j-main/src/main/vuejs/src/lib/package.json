@@ -1,0 +1,25 @@
+{
+  "name": "vue4j-main",
+  "version": "1.0.0",
+  "description": "OpenAPI client for vue4j-main",
+  "author": "OpenAPI-Generator Contributors",
+  "keywords": [
+    "openapi-client",
+    "openapi-generator"
+  ],
+  "license": "Unlicense",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --outDir dist/",
+    "postinstall": "npm run build"
+  },
+  "dependencies": {
+    "inversify": "^4.3.0",
+    "whatwg-fetch": "~2.0.1",
+    "reflect-metadata": "0.1.8",
+    "rxjs": "^6.0.0"
+  },
+  "devDependencies": {
+  }
+}

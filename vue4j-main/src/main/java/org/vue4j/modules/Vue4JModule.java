@@ -15,15 +15,17 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.logging.Level;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vue4j.Vue4J;
+import org.vue4j.services.Vue4JService;
 import org.vue4j.utils.ID;
 
-public abstract class Vue4JModule implements ID {
+public abstract class Vue4JModule implements ID, Vue4JService {
 
     protected final static Logger LOGGER = LoggerFactory.getLogger(Vue4JModule.class);
 
@@ -48,30 +50,107 @@ public abstract class Vue4JModule implements ID {
         this.vue4J = vue4J;
     }
 
-    public void configure() {
-        // DO NOTHING BY DEFAULT
+    protected ModuleLifeCycleStatus status = ModuleLifeCycleStatus.VISIBLE;
+
+    public boolean isConstructed() {
+        return status.equals(ModuleLifeCycleStatus.VISIBLE);
     }
 
-    protected boolean enabled = isDefaultEnabled();
-
-    public boolean isDefaultEnabled() {
-        return false;
+    public boolean isConfigured() {
+        return status.equals(ModuleLifeCycleStatus.CONFIGURED);
     }
 
-    public void enable() {
-        enabled = true;
+    public boolean isActivated() {
+        return status.equals(ModuleLifeCycleStatus.ACTIVATED);
+    }
+
+    public boolean isStarted() {
+        return status.equals(ModuleLifeCycleStatus.STARTED);
+    }
+
+    public final void initialize() {
+        if (isConstructed()) {
+            try {
+                configure();
+                status = ModuleLifeCycleStatus.CONFIGURED;
+                LOGGER.debug("Module configured : " + getID());
+            } catch (Exception ex) {
+                status = ModuleLifeCycleStatus.CONFIGURATION_ERROR;
+                LOGGER.error("Error while configuring module: " + getID(), ex);
+            }
+        }
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return true;
+    }
+        
+    public final void enable() {
+        if (isEnabled() && isConfigured()) {
+            try {
+                activate();
+                status = ModuleLifeCycleStatus.ACTIVATED;
+                LOGGER.debug("Module activated : " + getID());
+            } catch (Exception ex) {
+                status = ModuleLifeCycleStatus.ACTIVATION_ERROR;
+                LOGGER.error("Error while activating module: " + getID(), ex);
+            }
+        }
+    }
+
+    public boolean autoStart() {
+        return false;
+    }
+
+    public final void run() {
+        if (isActivated()) {
+            try {
+                start();
+                status = ModuleLifeCycleStatus.STARTED;
+                LOGGER.debug("Module started : " + getID());
+            } catch (Exception ex) {
+                status = ModuleLifeCycleStatus.STARTING_ERROR;
+                LOGGER.error("Error while starting module: " + getID(), ex);
+            }
+        }
+    }
+
+    public final void shutdown() {
+        if (isStarted()) {
+            try {
+                stop();
+                status = ModuleLifeCycleStatus.ACTIVATED;
+                LOGGER.debug("Module stopped : " + getID());
+            } catch (Exception ex) {
+                status = ModuleLifeCycleStatus.STOPPING_ERROR;
+                LOGGER.error("Error while stopping module: " + getID(), ex);
+            }
+        }
     }
 
     public void disable() {
-        enabled = false;
+        if (isActivated()) {
+            try {
+                deactivate();
+                status = ModuleLifeCycleStatus.STARTED;
+                LOGGER.debug("Module deactivated : " + getID());
+            } catch (Exception ex) {
+                status = ModuleLifeCycleStatus.STARTING_ERROR;
+                LOGGER.error("Error while deactivating module: " + getID(), ex);
+            }
+        }
     }
 
     public void clean() {
-        // DO NOTHING BY DEFAULT
+        if (isConfigured()) {
+            try {
+                destroy();
+                LOGGER.debug("Module destroyed : " + getID());
+            } catch (Exception ex) {
+                LOGGER.error("Ignored error while destroying module: " + getID(), ex);
+            }
+            status = ModuleLifeCycleStatus.VISIBLE;
+        }
     }
 
     /**

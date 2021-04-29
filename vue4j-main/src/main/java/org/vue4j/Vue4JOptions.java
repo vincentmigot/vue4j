@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vue4j.config.ConfigProfile;
@@ -30,8 +31,6 @@ public class Vue4JOptions {
 
     public final static String DEBUG_ENV_KEY = "VUE4J_DEBUG";
     public final static String DEBUG_ARG_KEY = "DEBUG";
-
-    public final static String PROD_CFG = "prod";
 
     private final boolean debug;
 
@@ -75,6 +74,27 @@ public class Vue4JOptions {
         return args;
     }
 
+    
+    static Vue4JOptions fromMap(Map<String, String> options, boolean forceDebug) {
+        return fromArgs(getArgs(options), forceDebug);
+    }
+    
+        /**
+     * Transform map to an array of arguments "--key=value".
+     *
+     * @param args map to transform
+     * @return list of transfromed args
+     */
+    private static String[] getArgs(Map<String, String> args) {
+        List<String> argsList = new ArrayList<>(args.size());
+        args.forEach((String key, String value) -> {
+            argsList.add("--" + key + "=" + value);
+        });
+
+        return argsList.toArray(new String[0]);
+    }
+
+    
     public static Vue4JOptions fromArgs(String[] args, boolean forceDebug) {
         List<String> cliArgsList = new ArrayList<>(args.length);
 

@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.vue4j.Vue4J;
 import org.vue4j.utils.ClassUtils;
 import org.vue4j.utils.bo.BuildOrder;
+import org.vue4j.utils.bo.BuildOrderSync;
 import org.vue4j.utils.bo.BuildOrderUnsolvableException;
 
 /**
@@ -59,6 +60,8 @@ public class ModuleManager {
     private final Path baseDirectory;
 
     private BuildOrder<Vue4JModule> buildOrder = null;
+
+    private final Map<String, Vue4JModule> moduleByID = new HashMap<>();
 
     public ModuleManager(Path baseDirectory) throws IOException, ModelBuildingException, DependencyResolutionException {
         this.dependencyManager = new DependencyManager(
@@ -158,6 +161,16 @@ public class ModuleManager {
         }
     }
 
+    
+    /**
+     * Return list of loaded modules JAR URLs.
+     *
+     * @return list of loaded modules JAR URLs
+     */
+    public Set<URL> getModulesURLs() {
+        return modulesURLs;
+    }
+    
     /**
      * Return an Iterable of modules to do custom loop logic.
      *
@@ -196,6 +209,7 @@ public class ModuleManager {
                     (module) -> {
                         return module.getID();
                     }, (module) -> {
+                        moduleByID.put(module.getClass().getCanonicalName(), module);
                         String artifactId = ModuleManager.getProjectIdFromClass(module.getClass());
                         return modulesDependenciesByArtifactId.get(artifactId);
                     });
@@ -203,11 +217,20 @@ public class ModuleManager {
 
         return buildOrder;
     }
-    
+
+    public <T> T getModule(Class<T> moduleClass) {
+        Vue4JModule module = moduleByID.get(moduleClass.getCanonicalName());
+        if (module == null) {
+            return null;
+        } else {
+            return (T) module;
+        }
+    }
+
     public void forEachModules(Consumer<Vue4JModule> action) throws BuildOrderUnsolvableException {
         getBuildOrder().execute(action);
     }
-    
+
     public void forEachModulesSync(Consumer<Vue4JModule> action) throws BuildOrderUnsolvableException {
         getBuildOrder().executeSync(action);
     }
@@ -344,5 +367,23 @@ public class ModuleManager {
         } catch (IOException ex) {
             LOGGER.error("Error while writing dependency file", ex);
         }
+    }
+
+    private Map<Class<?>, List<Vue4JModule>> moduleByExtensions = new HashMap<>();
+
+    public <T> void forEachModulesImplementingExtension(Class<T> moduleExtensionClass, Consumer<T> action) throws BuildOrderUnsolvableException {
+        if (!moduleByExtensions.containsKey(moduleExtensionClass)) {
+            List<Vue4JModule> modules = new ArrayList<>();
+            getBuildOrder().executeSync((module) -> {
+                if (moduleExtensionClass.isAssignableFrom(module.getClass())) {
+                    modules.add(module);
+                }
+            });
+             moduleByExtensions.put(moduleExtensionClass, modules);
+        }
+        
+        moduleByExtensions.get(moduleExtensionClass).forEach((module) -> {
+            action.accept((T) module);
+        });
     }
 }
